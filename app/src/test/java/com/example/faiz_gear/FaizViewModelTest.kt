@@ -1,7 +1,9 @@
 package com.example.faiz_gear
 
 import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -11,7 +13,11 @@ class FaizViewModelTest {
 
     @Before
     fun setup() {
-        viewModel = FaizViewModel()
+        viewModel = FaizViewModel(
+            mainDispatcher = Dispatchers.Unconfined,
+            ioDispatcher = Dispatchers.Unconfined,
+            enableAsyncActions = false
+        )
     }
 
     @Test
@@ -28,7 +34,10 @@ class FaizViewModelTest {
         viewModel.onKeyPress("2")
         viewModel.onKeyPress("3")
         viewModel.onKeyPress("4")
-        assertEquals("123", viewModel.inputCode)
+        viewModel.onKeyPress("5")
+        viewModel.onKeyPress("6")
+        viewModel.onKeyPress("7")
+        assertEquals("123456", viewModel.inputCode)
     }
 
     @Test
@@ -45,9 +54,10 @@ class FaizViewModelTest {
         viewModel.onKeyPress("0")
         viewModel.onKeyPress("3")
         viewModel.onEnter()
-        assertEquals("SINGLE MODE", viewModel.statusMessage)
-        assertEquals(Color.Green, viewModel.statusColor)
-        assertEquals("", viewModel.inputCode)
+        assertEquals("STATUS CHECK", viewModel.statusMessage)
+        assertEquals("SCAN", viewModel.uiTitle)
+        assertEquals(Color(0xFFFFA500), viewModel.statusColor)
+        assertTrue(viewModel.isKeypadLocked)
     }
 
     @Test
@@ -56,31 +66,81 @@ class FaizViewModelTest {
         viewModel.onKeyPress("0")
         viewModel.onKeyPress("6")
         viewModel.onEnter()
-        assertEquals("BURST MODE", viewModel.statusMessage)
-        assertEquals(Color.Green, viewModel.statusColor)
-        assertEquals("", viewModel.inputCode)
+        assertEquals("BATCH START", viewModel.statusMessage)
+        assertEquals("BURST", viewModel.uiTitle)
+        assertEquals(Color(0xFFFFA500), viewModel.statusColor)
+        assertTrue(viewModel.isKeypadLocked)
     }
 
     @Test
-    fun testCode279() {
-        viewModel.onKeyPress("2")
-        viewModel.onKeyPress("7")
-        viewModel.onKeyPress("9")
+    fun testCode111() {
+        viewModel.onKeyPress("1")
+        viewModel.onKeyPress("1")
+        viewModel.onKeyPress("1")
         viewModel.onEnter()
-        assertEquals("CHARGE", viewModel.statusMessage)
-        assertEquals(Color.Green, viewModel.statusColor)
-        assertEquals("", viewModel.inputCode)
+        assertEquals("FAIZ START", viewModel.statusMessage)
+        assertEquals("faiz_start", viewModel.currentAction)
+        assertEquals("COMPLETE", viewModel.uiTitle)
+        assertTrue(viewModel.isKeypadLocked)
     }
 
     @Test
     fun testErrorCode() {
+        viewModel.onKeyPress("7")
+        viewModel.onKeyPress("7")
+        viewModel.onKeyPress("7")
+        viewModel.onEnter()
+        assertEquals("ERROR", viewModel.statusMessage)
+        assertEquals(Color.Red, viewModel.statusColor)
+        assertEquals("777", viewModel.inputCode)
+    }
+
+    @Test
+    fun testCode888() {
+        viewModel.onKeyPress("8")
+        viewModel.onKeyPress("8")
+        viewModel.onKeyPress("8")
+        viewModel.onEnter()
+        assertEquals("GUEST SHUTDOWN", viewModel.statusMessage)
+        assertEquals("DEFORMATION", viewModel.uiTitle)
+        assertEquals("guest_shutdown", viewModel.currentAction)
+        assertEquals(Color(0xFFFFA500), viewModel.statusColor)
+        assertTrue(viewModel.isKeypadLocked)
+    }
+
+    @Test
+    fun testCode999() {
         viewModel.onKeyPress("9")
         viewModel.onKeyPress("9")
         viewModel.onKeyPress("9")
         viewModel.onEnter()
-        assertEquals("ERROR", viewModel.statusMessage)
-        assertEquals(Color.Red, viewModel.statusColor)
-        assertEquals("", viewModel.inputCode)
+        assertEquals("MANAGED SHUTDOWN", viewModel.statusMessage)
+        assertEquals("managed_shutdown", viewModel.currentAction)
+        assertEquals(Color(0xFFFFA500), viewModel.statusColor)
+        assertTrue(viewModel.isKeypadLocked)
+    }
+
+    @Test
+    fun testCode000RequiresConfirmFirst() {
+        viewModel.onKeyPress("0")
+        viewModel.onKeyPress("0")
+        viewModel.onKeyPress("0")
+        viewModel.onEnter()
+        assertEquals("CONFIRM", viewModel.statusMessage)
+        assertEquals("NODE OFF", viewModel.uiSubtitle)
+        assertTrue(viewModel.pendingNodeShutdownConfirm)
+    }
+
+    @Test
+    fun testCode000SecondEnterStartsConfirmedAction() {
+        viewModel.onKeyPress("0")
+        viewModel.onKeyPress("0")
+        viewModel.onKeyPress("0")
+        viewModel.onEnter()
+        viewModel.onEnter()
+        assertEquals("NODE SHUTDOWN", viewModel.statusMessage)
+        assertEquals("proxmox_shutdown", viewModel.currentAction)
+        assertTrue(viewModel.isKeypadLocked)
     }
 
     @Test

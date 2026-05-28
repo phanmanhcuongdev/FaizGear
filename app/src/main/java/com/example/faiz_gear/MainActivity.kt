@@ -281,9 +281,15 @@ fun DisplayPanel(viewModel: FaizViewModel) {
         when (uiState) {
             FaizUiState.IDLE -> IdleDisplay()
             FaizUiState.INPUT -> InputDisplay(viewModel.inputCode)
-            FaizUiState.VERIFYING -> VerifyingDisplay(viewModel.verificationProgress)
-            FaizUiState.SUCCESS -> SuccessDisplay()
-            FaizUiState.ERROR -> ErrorDisplay(viewModel.statusMessage)
+            FaizUiState.VERIFYING -> VerifyingDisplay(viewModel.statusMessage, viewModel.verificationProgress)
+            FaizUiState.RESULT -> {
+                if (viewModel.currentAction == "status_check" && viewModel.targets.isNotEmpty()) {
+                    StatusGridDisplay(viewModel)
+                } else {
+                    ResultDisplay(viewModel)
+                }
+            }
+            FaizUiState.ERROR -> ErrorDisplay(viewModel)
         }
     }
 }
@@ -368,7 +374,7 @@ fun InputDisplay(code: String) {
 }
 
 @Composable
-fun VerifyingDisplay(progress: Float) {
+fun VerifyingDisplay(label: String, progress: Float) {
     val infiniteTransition = rememberInfiniteTransition(label = "Verifying")
     val pulse by infiniteTransition.animateFloat(
         initialValue = 0.6f,
@@ -389,13 +395,14 @@ fun VerifyingDisplay(progress: Float) {
             letterSpacing = 1.sp
         )
         Spacer(modifier = Modifier.height(16.dp))
+        val actionText = if (label == "STANDING BY...") "STANDING\nBY" else label.replace(" ", "\n")
         Text(
-            text = "STANDING\nBY",
+            text = actionText,
             color = CrimsonRed.copy(alpha = pulse),
-            fontSize = 36.sp,
+            fontSize = if (actionText.length > 12) 28.sp else 36.sp,
             fontWeight = FontWeight.Black,
             textAlign = TextAlign.Center,
-            lineHeight = 40.sp,
+            lineHeight = if (actionText.length > 12) 32.sp else 40.sp,
             modifier = Modifier.graphicsLayer {
                 shadowElevation = 8.dp.toPx()
                 spotShadowColor = CrimsonRed
@@ -430,23 +437,24 @@ fun VerifyingDisplay(progress: Float) {
 }
 
 @Composable
-fun SuccessDisplay() {
+fun ResultDisplay(viewModel: FaizViewModel) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
-            text = "CONNECTION ESTABLISHED",
-            color = CrimsonRed,
+            text = viewModel.uiSubtitle,
+            color = if (viewModel.statusMessage == "PARTIAL") AmberYellow else CrimsonRed,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 1.sp
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "COMPLETE",
-            color = CrimsonRed,
-            fontSize = 42.sp,
+            text = viewModel.uiTitle,
+            color = if (viewModel.statusMessage == "PARTIAL") AmberYellow else CrimsonRed,
+            fontSize = if (viewModel.uiTitle.length > 8) 34.sp else 42.sp,
             fontWeight = FontWeight.Black,
             textAlign = TextAlign.Center,
-            modifier = Modifier.shadow(12.dp, CrimsonRed)
+            lineHeight = if (viewModel.uiTitle.length > 8) 36.sp else 44.sp,
+            modifier = Modifier.shadow(12.dp, if (viewModel.statusMessage == "PARTIAL") AmberYellow else CrimsonRed)
         )
         Spacer(modifier = Modifier.height(20.dp))
         
@@ -468,17 +476,21 @@ fun SuccessDisplay() {
             
             drawPath(
                 path = path,
-                color = CrimsonRed,
+                color = if (viewModel.statusMessage == "PARTIAL") AmberYellow else CrimsonRed,
                 style = Stroke(width = strokeWidth)
             )
             
-            drawCircle(CrimsonRed, radius = 3.dp.toPx(), center = Offset(0f, centerY))
-            drawCircle(CrimsonRed, radius = 3.dp.toPx(), center = Offset(size.width, centerY))
+            val nodeColor = if (viewModel.statusMessage == "PARTIAL") AmberYellow else CrimsonRed
+            drawCircle(nodeColor, radius = 3.dp.toPx(), center = Offset(0f, centerY))
+            drawCircle(nodeColor, radius = 3.dp.toPx(), center = Offset(size.width, centerY))
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+        val detail = listOf(viewModel.summaryMessage, viewModel.resultMessage)
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
         Text(
-            text = "Wake-on-LAN signal sent\nto Workstation",
+            text = detail.ifBlank { viewModel.currentAction.uppercase().replace("_", " ") },
             color = TextMain,
             fontSize = 10.sp,
             textAlign = TextAlign.Center,
@@ -488,25 +500,123 @@ fun SuccessDisplay() {
 }
 
 @Composable
-fun ErrorDisplay(message: String) {
+fun StatusGridDisplay(viewModel: FaizViewModel) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = viewModel.uiTitle,
+                    color = CrimsonRed,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Black,
+                    lineHeight = 20.sp
+                )
+                Text(
+                    text = viewModel.summaryMessage.ifBlank { viewModel.uiSubtitle },
+                    color = TextMuted,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = viewModel.uiSubtitle,
+                color = TextMain,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.End
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(4),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) {
+            items(viewModel.targets) { target ->
+                TargetStatusTile(target, viewModel.currentAction)
+            }
+        }
+    }
+}
+
+@Composable
+fun TargetStatusTile(target: FaizTarget, action: String) {
+    val isHealthy = if (action == "status_check") {
+        target.state.equals("running", ignoreCase = true)
+    } else {
+        target.ok
+    }
+    val tileColor = if (isHealthy) Color(0xFF0D7A3B) else Color(0xFF8A1111)
+    val borderColor = if (isHealthy) Color(0xFF44FF88) else CrimsonRed
+    val stateText = target.state.ifBlank { target.result.ifBlank { "unknown" } }.uppercase()
+
+    Box(
+        modifier = Modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(4.dp))
+            .background(tileColor)
+            .border(1.dp, borderColor, RoundedCornerShape(4.dp))
+            .padding(3.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = target.id,
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center,
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = stateText,
+                color = Color.White.copy(alpha = 0.92f),
+                fontSize = 7.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                lineHeight = 8.sp,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+fun ErrorDisplay(viewModel: FaizViewModel) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
-            text = "ACCESS DENIED",
+            text = viewModel.uiSubtitle,
             color = CrimsonRed,
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "INVALID CODE",
+            text = viewModel.uiTitle,
             color = AmberYellow,
-            fontSize = 24.sp,
+            fontSize = if (viewModel.uiTitle.length > 10) 22.sp else 24.sp,
             fontWeight = FontWeight.Black,
             textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = message,
+            text = viewModel.resultMessage.ifBlank { viewModel.statusMessage },
             color = TextMuted,
             fontSize = 10.sp,
             textAlign = TextAlign.Center
@@ -600,15 +710,16 @@ fun EnterButton(viewModel: FaizViewModel, vibrator: Vibrator) {
 }
 
 enum class FaizUiState {
-    IDLE, INPUT, VERIFYING, SUCCESS, ERROR
+    IDLE, INPUT, VERIFYING, RESULT, ERROR
 }
 
 @Composable
 fun getFaizUiState(viewModel: FaizViewModel): FaizUiState {
     return when {
-        viewModel.statusMessage == "COMPLETE" -> FaizUiState.SUCCESS
-        viewModel.statusMessage == "STANDING BY..." -> FaizUiState.VERIFYING
-        viewModel.statusMessage == "ERROR" || viewModel.statusMessage == "CONNECTION FAILED" -> FaizUiState.ERROR
+        viewModel.statusMessage == "COMPLETE" || viewModel.statusMessage == "PARTIAL" -> FaizUiState.RESULT
+        viewModel.statusMessage == "ERROR" -> FaizUiState.ERROR
+        viewModel.statusMessage == "CONFIRM" -> FaizUiState.ERROR
+        viewModel.isKeypadLocked -> FaizUiState.VERIFYING
         viewModel.inputCode.isNotEmpty() -> FaizUiState.INPUT
         else -> FaizUiState.IDLE
     }
